@@ -702,10 +702,11 @@ document.addEventListener('error', function(e){
   <p><span data-i18n="ft_rights">© 2026 Rio Property — Alta Costura Inmobiliaria. Todos los derechos reservados.</span></p>
   <div class="cities">Rio de Janeiro · Santiago de Chile</div>
   <p style="font-size:.68rem;opacity:.6">Fotografías: Rio Property · Unsplash (A. Diaz Gargiulo, R. Nogueira, L. D. Aguilar, D. Costa, M. Swigunski, F. C. Snyder, L. Marinho, Aalo Lens)</p>
+  <p class="site-credit" style="font-size:.62rem;opacity:.4;letter-spacing:.06em;margin-top:10px">Sitio web por <a href="https://holbaph.cl" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:2px">holbaph.cl</a></p>
 </footer>
 
 <!-- Datos del sitio (los administra el panel; no editar a mano) -->
-<script id="site-data" type="application/json">{"propertiesEnabled":false,"adminKey":"cmlvcHJvcGVydHkyMDI2","properties":[]}</script>
+<script id="site-data" type="application/json">{"propertiesEnabled":false,"properties":[]}</script>
 
 <!-- ================= PANEL DE ADMINISTRACIÓN ================= -->
 <div class="admin-modal" id="loginModal">
@@ -771,15 +772,16 @@ document.addEventListener('error', function(e){
 
     <div class="ad-sec">
       <h4>Publicar cambios</h4>
-      <button class="ad-btn primary" id="exportBtn">⬇ Descargar index.html actualizado</button>
-      <p class="ad-note">Los cambios se ven al instante en este navegador (borrador local). Para que los vean tus visitantes, descarga el archivo actualizado y súbelo al hosting reemplazando el anterior.</p>
+      <button class="ad-btn primary" id="publishBtn">✓ Publicar cambios en el sitio</button>
+      <p class="ad-note" id="publishNote">Mientras editas, los cambios se ven solo en este navegador (borrador). Al publicar, quedan visibles para todos al instante y se guarda una versión en el historial.</p>
+      <button class="ad-btn" id="exportBtn">⬇ Descargar copia de respaldo</button>
       <button class="ad-btn danger" id="discardBtn">Descartar borrador local</button>
     </div>
 
     <div class="ad-sec">
       <h4>Herramientas</h4>
       <button class="ad-btn" id="webmailBtn">✉ Abrir mi correo (webmail)</button>
-      <button class="ad-btn" id="changeKeyBtn">Cambiar clave de administración</button>
+      <button class="ad-btn" id="changeKeyBtn">Contraseña y Google Authenticator</button>
       <button class="ad-btn" id="logoutBtn">Cerrar sesión</button>
     </div>
   </div>
@@ -1160,26 +1162,34 @@ function saveDraft(){
   renderAdminList();
 }
 
-function adminLogged(){ try { return sessionStorage.getItem('rp_admin') === '1'; } catch(e) { return false; } }
-
-$('adminLink').addEventListener('click', () => {
-  if (adminLogged()) { $('adminDrawer').classList.add('open'); renderAdminList(); syncToggle(); }
-  else { $('loginModal').classList.add('open'); $('adminPass').value=''; $('loginErr').style.display='none'; setTimeout(()=>$('adminPass').focus(),100); }
-});
-$('loginCancel').addEventListener('click', () => $('loginModal').classList.remove('open'));
-function tryLogin(){
-  if (btoa(unescape(encodeURIComponent($('adminPass').value))) === SITE.adminKey) {
-    try { sessionStorage.setItem('rp_admin','1'); } catch(e) {}
-    $('loginModal').classList.remove('open');
-    $('adminDrawer').classList.add('open');
-    renderAdminList(); syncToggle();
-  } else { $('loginErr').style.display = 'block'; }
+// El acceso usa la misma cuenta del panel de chefnicolasperez.com (correo + contraseña + Google Authenticator).
+// La sesión la valida el servidor; aquí no hay ninguna clave.
+let ADMIN = null;
+async function loadAdminSession(){
+  try {
+    const r = await fetch('/_admin/session', {cache:'no-store', credentials:'same-origin'});
+    ADMIN = r.ok ? await r.json() : null;
+  } catch(e) { ADMIN = null; }
+  return ADMIN;
 }
+function adminLogged(){ return !!(ADMIN && ADMIN.ok); }
+function openAdmin(){ $('adminDrawer').classList.add('open'); renderAdminList(); syncToggle(); }
+
+$('adminLink').addEventListener('click', async () => {
+  if (adminLogged() || (await loadAdminSession())?.ok) openAdmin();
+  else location.href = '/_admin/login';
+});
+if (location.hash === '#admin') {
+  loadAdminSession().then(s => { if (s && s.ok) { history.replaceState(null, '', location.pathname); openAdmin(); } });
+}
+$('loginCancel').addEventListener('click', () => $('loginModal').classList.remove('open'));
+function tryLogin(){ location.href = '/_admin/login'; }
 $('loginBtn').addEventListener('click', tryLogin);
 $('adminPass').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
 $('adminClose').addEventListener('click', () => $('adminDrawer').classList.remove('open'));
-$('logoutBtn').addEventListener('click', () => {
-  try { sessionStorage.removeItem('rp_admin'); } catch(e) {}
+$('logoutBtn').addEventListener('click', async () => {
+  try { await fetch('/_admin/logout', {method:'POST', credentials:'same-origin'}); } catch(e) {}
+  ADMIN = null;
   $('adminDrawer').classList.remove('open');
 });
 $('webmailBtn').addEventListener('click', () => window.open('https://mail.hostinger.com','_blank'));
@@ -1283,13 +1293,22 @@ $('discardBtn').addEventListener('click', () => {
   renderProps(); renderAdminList(); syncToggle();
 });
 
-$('changeKeyBtn').addEventListener('click', () => {
-  const nk = prompt('Nueva clave de administración (mínimo 8 caracteres):');
-  if (!nk) return;
-  if (nk.length < 8) { alert('Muy corta: usa al menos 8 caracteres.'); return; }
-  SITE.adminKey = btoa(unescape(encodeURIComponent(nk)));
-  saveDraft();
-  alert('Clave actualizada en el borrador. Recuerda descargar y subir el index.html actualizado para que aplique en el sitio publicado.');
+$('changeKeyBtn').addEventListener('click', () => window.open('https://chefnicolasperez.com/admin/seguridad', '_blank'));
+
+$('publishBtn').addEventListener('click', async () => {
+  if (!adminLogged()) { location.href = '/_admin/login'; return; }
+  if (!confirm('¿Publicar los cambios? Quedarán visibles para todos los visitantes.')) return;
+  const btn = $('publishBtn'); btn.disabled = true; btn.textContent = 'Publicando…';
+  try {
+    const r = await fetch('/_admin/save', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify(SITE)});
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) { alert('Tu sesión expiró. Vuelve a iniciar sesión.'); location.href = '/_admin/login'; return; }
+    if (!r.ok) throw new Error(d.error || ('Error ' + r.status));
+    try { localStorage.removeItem('rp_draft'); } catch(e) {}
+    alert('✓ Publicado. Los visitantes ya ven los cambios (puede tardar unos segundos en aparecer).');
+  } catch(e) {
+    alert('No se pudo publicar: ' + e.message + ' (tus cambios siguen guardados como borrador en este navegador).');
+  } finally { btn.disabled = false; btn.textContent = '✓ Publicar cambios en el sitio'; }
 });
 
 $('exportBtn').addEventListener('click', async () => {
