@@ -1177,7 +1177,30 @@ async function loadAdminSession(){
   return ADMIN;
 }
 function adminLogged(){ return !!(ADMIN && ADMIN.ok); }
-function openAdmin(){ $('adminDrawer').classList.add('open'); renderAdminList(); syncToggle(); }
+function openAdmin(){ $('adminDrawer').classList.add('open'); renderAdminList(); syncToggle(); setTimeout(sendAdminDiag, 900); }
+
+// Diagnóstico de visualización del panel (solo con sesión de administrador; no incluye datos personales)
+function sendAdminDiag(){
+  try {
+    const d = $('adminDrawer'), h = d.querySelector('.ad-head h3'), cs = getComputedStyle(d);
+    const r = d.getBoundingClientRect(), hr = h ? h.getBoundingClientRect() : null;
+    const top = hr ? document.elementFromPoint(hr.left + 20, hr.top + hr.height / 2) : null;
+    const desc = el => el ? (el.tagName + '#' + el.id + '.' + String(el.className).slice(0, 40)) : null;
+    const foreign = [...document.querySelectorAll('style,link[rel=stylesheet]')].filter(s => !s.closest('head') || s.id || s.className || s.getAttribute('data-darkreader') !== null || (s.href && !s.href.startsWith(location.origin))).map(s => (s.tagName + '#' + s.id + '.' + s.className + ' ' + (s.href || '')).slice(0, 80));
+    const info = {
+      ua: navigator.userAgent, vw: innerWidth, vh: innerHeight, cw: document.documentElement.clientWidth, dpr: devicePixelRatio,
+      drawer: [r.left, r.top, r.width, r.height].map(Math.round), cs: [cs.transform, cs.visibility, cs.opacity, cs.display, cs.right, cs.left, cs.filter, cs.zIndex],
+      h3: h ? { txt: h.textContent.slice(0, 30), color: getComputedStyle(h).color, rect: [hr.left, hr.top, hr.width, hr.height].map(Math.round), vis: getComputedStyle(h).visibility, op: getComputedStyle(h).opacity } : null,
+      encimaDelTitulo: desc(top), dentro: !!(top && top.closest('#adminDrawer')),
+      htmlAttrs: [...document.documentElement.attributes].map(a => a.name + '=' + a.value.slice(0, 30)),
+      estilosAjenos: foreign.slice(0, 10), hijosBody: document.body.children.length,
+      translate: document.documentElement.classList.contains('translated-ltr') || !!document.querySelector('font[style]')
+    };
+    fetch('/_admin/diag', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(info) }).catch(() => {});
+  } catch (e) {
+    fetch('/_admin/diag', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'text/plain' }, body: 'ERROR ' + e.message }).catch(() => {});
+  }
+}
 
 $('adminLink').addEventListener('click', async () => {
   if (adminLogged() || (await loadAdminSession())?.ok) openAdmin();
