@@ -1179,9 +1179,18 @@ $('adminLink').addEventListener('click', async () => {
   if (adminLogged() || (await loadAdminSession())?.ok) openAdmin();
   else location.href = '/_admin/login';
 });
-if (location.hash === '#admin') {
-  loadAdminSession().then(s => { if (s && s.ok) { history.replaceState(null, '', location.pathname); openAdmin(); } });
-}
+// Regreso del inicio de sesión (/?admin=<marca>#admin) o aviso de error (/?acceso=error)
+(() => {
+  const q = new URLSearchParams(location.search);
+  const back = location.hash === '#admin' || q.has('admin');
+  const failed = q.get('acceso') === 'error';
+  if (back || failed) history.replaceState(null, '', location.pathname);
+  if (failed) { setTimeout(() => alert('No se pudo iniciar sesión en el panel. Vuelve a pulsar el candado e inténtalo de nuevo.'), 300); return; }
+  if (back) loadAdminSession().then(s => {
+    if (s && s.ok) openAdmin();
+    else alert('Iniciaste sesión, pero este navegador no guardó la sesión del panel. Revisa que acepte cookies de rioproperty.com.br e inténtalo de nuevo.');
+  });
+})();
 $('loginCancel').addEventListener('click', () => $('loginModal').classList.remove('open'));
 function tryLogin(){ location.href = '/_admin/login'; }
 $('loginBtn').addEventListener('click', tryLogin);
